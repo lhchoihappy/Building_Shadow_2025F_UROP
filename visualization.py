@@ -8,7 +8,7 @@ import os
 from pysolar import radiation
 from datetime import datetime, timedelta
 
-def generate_irradiance_map(buildings, hourly_irradiance, specified_hour, timestamp):
+def generate_irradiance_map(buildings, hourly_irradiance, specified_hour, timestamp, file_path):
     """
     Generate a single irradiance map for the specified hour with a uniform scale bar.
     
@@ -17,6 +17,7 @@ def generate_irradiance_map(buildings, hourly_irradiance, specified_hour, timest
     - hourly_irradiance: Dict of hourly irradiance data.
     - specified_hour: The hour for visualization.
     - timestamp: For file naming.
+    - file_path: Path to the GeoJSON file for base path.
     
     Returns:
     - fig, ax: Matplotlib figure and axis.
@@ -100,7 +101,7 @@ def generate_irradiance_map(buildings, hourly_irradiance, specified_hour, timest
     plt.tight_layout()
     
     # Save the plot
-    base_path = os.path.splitext(file_path)[0]  # Use file_path from the calling context
+    base_path = os.path.splitext(file_path)[0]
     irradiance_map_path = f"{base_path}_{timestamp}_irradiance_hour_{specified_hour:02d}.png"
     plt.savefig(irradiance_map_path, dpi=300, bbox_inches='tight', facecolor='white')
     print(f"Irradiance map for hour {specified_hour:02d} saved as: {irradiance_map_path}")
