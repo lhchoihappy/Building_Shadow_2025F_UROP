@@ -283,9 +283,12 @@ def plot_combined_sunshine_overlay(ground_sunshine, roof_sunshine, buildings_ana
     cbar.set_label('Sunshine Minutes (0-60)', fontsize=12)
     
     # Set limits exactly to bounds for tight fit (no extra space)
-    margin = 0.000005  # Tiny margin to avoid edge clipping issues
-    ax.set_xlim(minx - margin, maxx + margin)
-    ax.set_ylim(miny - margin, maxy + margin)
+    # margin = 0.000005  # Tiny margin to avoid edge clipping issues
+    # ax.set_xlim(minx - margin, maxx + margin)
+    # ax.set_ylim(miny - margin, maxy + margin)
+
+    ax.set_xlim(minx, maxx)
+    ax.set_ylim(miny, maxy)
     ax.set_xlabel('Longitude')
     ax.set_ylabel('Latitude')
     ax.set_aspect('equal')
