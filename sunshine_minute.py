@@ -300,7 +300,7 @@ def plot_combined_sunshine_overlay(ground_sunshine, roof_sunshine, buildings_ana
         buildings_analysis.plot(ax=ax, facecolor='none', edgecolor='black', linewidth=0.5, alpha=0.8)
     
     # Add a single colorbar for the shared scale, adjusted for size
-    cbar = plt.colorbar(im_combined, ax=ax, shrink=0.8, pad=0.02, aspect=15)
+    cbar = plt.colorbar(im_combined, ax=ax, shrink=0.8, pad=0.02, aspect=10)
     cbar.set_label('Sunshine Minutes (0-60)', fontsize=10)
     cbar.ax.tick_params(labelsize=9)
     
