@@ -4,7 +4,6 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import griddata
-from solar_irradiance import get_direct_irradiance
 import pytz
 from pysolar.solar import get_altitude, get_azimuth
 from pysolar import radiation

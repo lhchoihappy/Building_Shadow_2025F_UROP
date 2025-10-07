@@ -3,7 +3,7 @@ from datetime import datetime
 import geopandas as gpd
 from map_extraction import extract_map_subset, compute_figsize
 from sunshine_minute import calculate_sunshine_minutes, plot_combined_sunshine_overlay
-from solar_irradiance import calculate_hourly_solar_irradiance, generate_irradiance_map
+from solar_irradiance import calculate_hourly_solar_irradiance, generate_irradiance_map, get_direct_irradiance
 from sunrise_sunset import get_sunrise_sunset
 import matplotlib.pyplot as plt
 import pybdshadow
