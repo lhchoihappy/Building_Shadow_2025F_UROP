@@ -12,7 +12,7 @@ from scipy.spatial import ConvexHull  # For masking to convex hull
 import numpy as np
 from scipy.interpolate import griddata  # For smooth interpolation
 from map_extraction import compute_figsize
-
+import scipy.ndimage as ndimage
 
 def calculate_sunshine_minutes(file_path, lat1, lon1, lat2, lon2, date, hour, roofSelection, timestamp, show_plot=True, verbose=False):
     """
@@ -157,6 +157,7 @@ def calculate_sunshine_minutes(file_path, lat1, lon1, lat2, lon2, date, hour, ro
     figsize = compute_figsize(min_lon, max_lon, min_lat, max_lat)
     fig, ax = plt.subplots(1, 1, figsize=figsize)
     if has_sunshine:
+        # Adjusted legend_kwds for larger colorbar (shrink=0.8 for slightly smaller, but to make scale "larger" in perception, use shrink=1.0 and adjust pad)
         sunshine.plot(
             ax=ax,
             column='sunshine_minutes_in_hour',
@@ -164,7 +165,7 @@ def calculate_sunshine_minutes(file_path, lat1, lon1, lat2, lon2, date, hour, ro
             alpha=1,
             norm=colors.Normalize(vmin=0, vmax=60),
             legend=True,
-            legend_kwds={'label': "Sunshine Minutes", 'orientation': "vertical", 'shrink': 1.0}
+            legend_kwds={'label': "Sunshine Minutes", 'orientation': "vertical", 'shrink': 0.8, 'pad': 0.02}
         )
         if not buildings_analysis.empty:
             buildings_analysis.plot(ax=ax, edgecolor='k', facecolor=(0, 0, 0, 0))
@@ -174,12 +175,29 @@ def calculate_sunshine_minutes(file_path, lat1, lon1, lat2, lon2, date, hour, ro
             buildings_analysis.plot(ax=ax, facecolor='none', edgecolor='black', linewidth=0.5)
         ax.set_title(f'Building Shapes - Hour {hour}:00 (No Sunlight), {date}, {roofSelection}')
     
-    plt.title(f'Sunshine Minutes in Hour ({hour}:00-{hour+1}:00, {date})' if has_sunshine else f'Building Shapes - Hour {hour}:00 (No Sunlight), {date}, {roofSelection}')
+    # Adjusted title with smaller font
+    title_str = f'Sunshine Minutes in Hour ({hour}:00-{hour+1}:00, {date})' if has_sunshine else f'Building Shapes - Hour {hour}:00 (No Sunlight), {date}, {roofSelection}'
+    ax.set_title(title_str, fontsize=12)
     
     # Set STRICT bounds (no buffer)
     ax.set_xlim(min_lon, max_lon)
     ax.set_ylim(min_lat, max_lat)
     ax.set_aspect('equal')
+
+    # Adjust axis labels font size
+    ax.set_xlabel('Longitude', fontsize=8)
+    ax.set_ylabel('Latitude', fontsize=8)
+
+    # Adjust tick font size
+    ax.tick_params(axis='both', labelsize=9)
+
+    # Adjust colorbar tick and label font sizes after plotting
+    if has_sunshine:
+        cbar = ax.get_legend()  # For geopandas plot legend
+        if cbar:
+            cbar.set_label('Sunshine Minutes', fontsize=10)
+            for t in cbar.get_ticks():
+                t.label.set_fontsize(10)
 
     if show_plot:
         plt.show()
@@ -245,6 +263,21 @@ def plot_combined_sunshine_overlay(ground_sunshine, roof_sunshine, buildings_ana
     # Clip to valid range [0, 60]
     grid_combined = np.clip(grid_combined, 0, 60)
     
+    # NAN handling by using scipy.ndimage.distance_transform_edt
+    valid_mask = ~np.isnan(grid_combined) # convert this NumPy array into binary np.array (1: fine, 0: NAN)
+    if np.any(valid_mask):  # Only if there's at least one valid value
+        dist, idx = ndimage.distance_transform_edt(~valid_mask, return_indices=True)
+        filled = grid_combined.copy()
+        nan_mask = ~valid_mask # 1: NAN, 0: fine
+        filled[nan_mask] = grid_combined[idx[0][nan_mask], idx[1][nan_mask]] # selects all the NaN (hole) positions in the filled array using nan_mask and 
+                                                                             # replaces their values with data from the nearest valid positions in grid_combined, 
+                                                                             # by indexing into it using the pre-computed row (idx[0]) and column (idx[1]) coordinates 
+                                                                             # for those exact hole spots
+        grid_combined = filled
+    else:
+        # All NaN: fill with 0 (no sunshine)
+        grid_combined = np.zeros_like(grid_combined)
+
     # Compute figsize based on bounds
     figsize = compute_figsize(min_lon, max_lon, min_lat, max_lat)
     
@@ -266,17 +299,19 @@ def plot_combined_sunshine_overlay(ground_sunshine, roof_sunshine, buildings_ana
     if not buildings_analysis.empty:
         buildings_analysis.plot(ax=ax, facecolor='none', edgecolor='black', linewidth=0.5, alpha=0.8)
     
-    # Add a single colorbar for the shared scale
-    cbar = plt.colorbar(im_combined, ax=ax, shrink=1.0)
-    cbar.set_label('Sunshine Minutes (0-60)', fontsize=14)
+    # Add a single colorbar for the shared scale, adjusted for size
+    cbar = plt.colorbar(im_combined, ax=ax, shrink=0.8, pad=0.02, aspect=15)
+    cbar.set_label('Sunshine Minutes (0-60)', fontsize=10)
+    cbar.ax.tick_params(labelsize=9)
     
     # Set STRICT limits (no margin, no extra space)
     ax.set_xlim(minx, maxx)
     ax.set_ylim(miny, maxy)
-    ax.set_xlabel('Longitude')
-    ax.set_ylabel('Latitude')
+    ax.set_xlabel('Longitude', fontsize=10)
+    ax.set_ylabel('Latitude', fontsize=10)
     ax.set_aspect('equal')
-    ax.set_title(f'Combined Ground & Rooftop Sunshine\nHour {hour:02d}:00-{hour+1:02d}:00, {date}', fontsize=14)
+    ax.tick_params(axis='both', labelsize=9)
+    ax.set_title(f'Combined Ground & Rooftop Sunshine\nHour {hour:02d}:00-{hour+1:02d}:00, {date}', fontsize=12)
     
     plt.tight_layout()
     

@@ -110,13 +110,13 @@ def generate_irradiance_map(buildings, hourly_irradiance, specified_hour, timest
     buildings.plot(ax=ax, facecolor='none', edgecolor='black', linewidth=1.2, alpha=1.0)
     
     # Add colorbar for irradiance with uniform scale
-    cbar = plt.colorbar(im, ax=ax, shrink=1.0)
-    cbar.set_label('Solar Irradiance (W/m²)', fontsize=14)
+    cbar = plt.colorbar(im, ax=ax, shrink=1.0, aspect=15)
+    cbar.set_label('Solar Irradiance (W/m²)', fontsize=10)
     
     ax.set_title(f'Solar Irradiance Map\n{datetime.now().strftime("%Y-%m-%d")} {specified_hour:02d}:00 - {specified_irradiance_data["irradiance"]:.1f} W/m²', 
-                 fontsize=16, pad=20)
-    ax.set_xlabel('Longitude', fontsize=12)
-    ax.set_ylabel('Latitude', fontsize=12)
+                 fontsize=12, pad=20)
+    ax.set_xlabel('Longitude', fontsize=8)
+    ax.set_ylabel('Latitude', fontsize=8)
     
     # Set STRICT bounds (no buffer)
     ax.set_xlim(minx, maxx)
