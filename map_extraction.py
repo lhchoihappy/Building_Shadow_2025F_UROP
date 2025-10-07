@@ -8,10 +8,30 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 from shapely.geometry import Polygon
 
+def compute_figsize(min_lon, max_lon, min_lat, max_lat, base_width=12):
+    """
+    Compute figsize based on the map aspect ratio to avoid margins with aspect='equal'.
+    
+    Parameters:
+    - min_lon, max_lon, min_lat, max_lat: Bounds.
+    - base_width: Base width for figsize (default 12).
+    
+    Returns:
+    - tuple: (width, height) for figsize.
+    """
+    delta_lon = max_lon - min_lon
+    delta_lat = max_lat - min_lat
+    map_aspect = delta_lon / delta_lat if delta_lat > 0 else 1
+    if map_aspect > 1:
+        height = base_width / map_aspect
+        return (base_width, height)
+    else:
+        width = base_width * map_aspect
+        return (width, base_width)
+
 def extract_map_subset(file_path, lat1, lon1, lat2, lon2, timestamp, csv_path):
     """
     Extract and visualize a subset of the GeoJSON map within the region defined by two points.
-    Clips building geometries to the bounding box for buildings that intersect it.
     Merges heights from CSV, updates TOPHEIGHT and BASEHEIGHT, calculates height, and uses a normal linear color scale.
     Exports the subset GeoDataFrame to CSV, saves the plot as PNG, and saves the subset as a new GeoJSON file.
     
@@ -25,7 +45,7 @@ def extract_map_subset(file_path, lat1, lon1, lat2, lon2, timestamp, csv_path):
     - csv_path (str): Path to the CSV file with heights.
     
     Returns:
-    - GeoDataFrame: Subset of the original data within the bounding box with updated heights and clipped geometries.
+    - GeoDataFrame: Subset of the original data within the bounding box with updated heights.
     - str: Path to the extracted GeoJSON file.
     """
     # Step 1: Load the GeoJSON file, assuming EPSG:2326 (Hong Kong 1980 Grid)
@@ -35,17 +55,11 @@ def extract_map_subset(file_path, lat1, lon1, lat2, lon2, timestamp, csv_path):
     gdf = gdf.to_crs('EPSG:4326')
     
     # Step 3: Define the bounding box from the two points
-    minx, maxx = min(lon1, lon2), max(lon1, lon2)
-    miny, maxy = min(lat1, lat2), max(lat1, lat2)
+    min_lon, max_lon = min(lon1, lon2), max(lon1, lon2)
+    min_lat, max_lat = min(lat1, lat2), max(lat1, lat2)
     
-    # Create a bounding box polygon for clipping
-    bbox_polygon = gpd.GeoDataFrame(
-        geometry=[Polygon([(minx, miny), (maxx, miny), (maxx, maxy), (minx, maxy), (minx, miny)])],
-        crs='EPSG:4326'
-    )
-    
-    # Step 4: Clip the geometries to the bounding box (selects intersecting and clips them)
-    subset_gdf = gpd.clip(gdf, bbox_polygon)
+    # Step 4: Extract subset using .cx indexer (spatial slicing)
+    subset_gdf = gdf.cx[min_lon:max_lon, min_lat:max_lat]
     
     # Step 5: Load heights from CSV and merge
     if os.path.exists(csv_path):
@@ -76,7 +90,7 @@ def extract_map_subset(file_path, lat1, lon1, lat2, lon2, timestamp, csv_path):
         print(f"Warning: CSV file {csv_path} not found. Using existing heights.")
     
     # Step 6: Calculate height (TOPHEIGHT - BASEHEIGHT), treating null as 0
-    subset_gdf['TOPHEIGHT'] = pd.to_numeric(subset_gdf['TOPHEIGHT'], errors='coerce').fillna(30) # purpose: testing the roofshadow
+    subset_gdf['TOPHEIGHT'] = pd.to_numeric(subset_gdf['TOPHEIGHT'], errors='coerce').fillna(30)
     subset_gdf['BASEHEIGHT'] = pd.to_numeric(subset_gdf['BASEHEIGHT'], errors='coerce').fillna(0)
     subset_gdf['height'] = subset_gdf['TOPHEIGHT'] - subset_gdf['BASEHEIGHT']
     
@@ -102,17 +116,20 @@ def extract_map_subset(file_path, lat1, lon1, lat2, lon2, timestamp, csv_path):
         subset_gdf.to_file(geojson_path, driver='GeoJSON')
         print(f"Subset GeoDataFrame exported to: {os.path.abspath(geojson_path)}")
         
+        # Compute figsize based on bounds
+        figsize = compute_figsize(min_lon, max_lon, min_lat, max_lat, base_width=18)
+        
         # Visualize the subset with NORMAL LINEAR color scale
-        fig, ax = plt.subplots(1, figsize=(12, 12))
-        # Plot all buildings with colormap, including height=0 as the minimum color
+        fig, ax = plt.subplots(1, 1, figsize=figsize)
+        # Plot filled colors first
         subset_gdf.plot(
             ax=ax,
-            column='height',
-            cmap='YlOrBr',
-            alpha=0.8,
-            norm=colors.Normalize(vmin=0, vmax=max_height),
+            column='height',  # Use clipped height directly
+            cmap='YlOrBr',    # Colormap similar to the image (yellow low, brown high)
+            alpha=0.8,        # Slight transparency
+            norm=colors.Normalize(vmin=0, vmax=max_height), # Normal linear scale to max height
             legend=True,
-            legend_kwds={'label': "Building Height (m)", 'orientation': "vertical", 'shrink': 0.5}
+            legend_kwds={'label': "Building Height (m)", 'orientation': "vertical", 'shrink': 1.0}
         )
         # Overlay edges on top for clear shapes
         subset_gdf.plot(
@@ -122,17 +139,10 @@ def extract_map_subset(file_path, lat1, lon1, lat2, lon2, timestamp, csv_path):
             linewidth=0.5
         )
         
-        # Center the plot without extra padding for a tightly fitted view
-        if not subset_gdf.empty:
-            bounds = subset_gdf.total_bounds
-            center_x = (bounds[0] + bounds[2]) / 2
-            center_y = (bounds[1] + bounds[3]) / 2
-            width = bounds[2] - bounds[0]
-            height = bounds[3] - bounds[1]
-            ax.set_xlim(center_x - (width / 2), center_x + (width / 2))
-            ax.set_ylim(center_y - (height / 2), center_y + (height / 2))
-        
-        ax.set_title(f'Building Footprints in Region ({minx:.3f}, {miny:.3f}) to ({maxx:.3f}, {maxy:.3f})', fontsize=16)
+        # Set plot properties with STRICT bounds (no buffer)
+        ax.set_xlim(min_lon, max_lon)
+        ax.set_ylim(min_lat, max_lat)
+        ax.set_title(f'Building Footprints in Region ({min_lon:.3f}, {min_lat:.3f}) to ({max_lon:.3f}, {max_lat:.3f})', fontsize=16)
         ax.set_xlabel('Longitude (°)')
         ax.set_ylabel('Latitude (°)')
 

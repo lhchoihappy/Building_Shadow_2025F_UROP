@@ -1,10 +1,9 @@
 import os
 from datetime import datetime
 import geopandas as gpd
-from map_extraction import extract_map_subset
+from map_extraction import extract_map_subset, compute_figsize
 from sunshine_minute import calculate_sunshine_minutes, plot_combined_sunshine_overlay
-from solar_irradiance import calculate_hourly_solar_irradiance
-from visualization import generate_irradiance_map
+from solar_irradiance import calculate_hourly_solar_irradiance, generate_irradiance_map
 from sunrise_sunset import get_sunrise_sunset
 import matplotlib.pyplot as plt
 import pybdshadow
@@ -21,11 +20,21 @@ if __name__ == "__main__":
 
     lat1, lon1 = 22.28300, 114.12678  # Point 1 (much more narrow)
     lat2, lon2 = 22.28276, 114.12805  # Point 2 (much more narrow)
+
+    # # A larger domain
+    # lat1, lon1 = 22.2836270, 114.1259158
+    # lat2, lon2 = 22.2819833, 114.1282566
     
     date = '2025-08-20'
     
     # Generate timestamp at runtime
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    
+    # Define strict bounds
+    min_lon = min(lon1, lon2)
+    max_lon = max(lon1, lon2)
+    min_lat = min(lat1, lat2)
+    max_lat = max(lat1, lat2)
     
     # Check if file exists
     if not os.path.exists(file_path):
@@ -77,7 +86,7 @@ if __name__ == "__main__":
             
             # Generate combined overlay sunshine plot
             print("Generating combined overlay sunshine map...")
-            combined_fig = plot_combined_sunshine_overlay(ground_sunshine, roof_sunshine, buildings_analysis, hour, date, timestamp, base_path)
+            combined_fig = plot_combined_sunshine_overlay(ground_sunshine, roof_sunshine, buildings_analysis, hour, date, timestamp, base_path, min_lat, min_lon, max_lat, max_lon)
             if combined_fig:
                 plt.close(combined_fig)
             
@@ -90,7 +99,7 @@ if __name__ == "__main__":
             
             # Irradiance map for this hour
             print("Generating irradiance map...")
-            irr_fig, irr_ax = generate_irradiance_map(buildings, hourly_irradiance, hour, timestamp, geojson_path)
+            irr_fig, irr_ax = generate_irradiance_map(buildings, hourly_irradiance, hour, timestamp, geojson_path, min_lat, min_lon, max_lat, max_lon)
             # Save irradiance here too
             irr_path = f"{base_path}_{timestamp}_irradiance_hour_{hour:02d}.png"
             plt.figure(irr_fig.number)

@@ -7,9 +7,11 @@ import matplotlib.pyplot as plt
 from pysolar.solar import get_altitude, get_azimuth
 import matplotlib.colors as colors
 from shapely import make_valid
+from shapely.geometry import Polygon, box
 from scipy.spatial import ConvexHull  # For masking to convex hull
 import numpy as np
 from scipy.interpolate import griddata  # For smooth interpolation
+from map_extraction import compute_figsize
 
 
 def calculate_sunshine_minutes(file_path, lat1, lon1, lat2, lon2, date, hour, roofSelection, timestamp, show_plot=True, verbose=False):
@@ -44,12 +46,18 @@ def calculate_sunshine_minutes(file_path, lat1, lon1, lat2, lon2, date, hour, ro
     # Use all buildings from the input file (no bounds filtering)
     buildings_analysis = buildings.copy()
 
+    # Define strict bounds
+    min_lon = min(lon1, lon2)
+    max_lon = max(lon1, lon2)
+    min_lat = min(lat1, lat2)
+    max_lat = max(lat1, lat2)
+
     # Step 4: Check if buildings_analysis is empty
     if buildings_analysis.empty:
         print(f"Warning: No buildings found in the input file! Timestamp: {timestamp}")
         # Create a default sunshine grid if no buildings
         sunshine = gpd.GeoDataFrame(
-            geometry=gpd.points_from_xy([0, 0.002], [0, 0.002]),  # Arbitrary small grid
+            geometry=gpd.points_from_xy([min_lon, min_lat], [min_lon, min_lat]),  # Arbitrary small grid within bounds
             crs="EPSG:4326"
         )
         sunshine['sunshine'] = 0
@@ -59,8 +67,19 @@ def calculate_sunshine_minutes(file_path, lat1, lon1, lat2, lon2, date, hour, ro
         sunshine = pybdshadow.cal_sunshine(buildings_analysis,
                                           day=date,
                                           roof=roofSelection,
-                                          accuracy=1,
+                                          accuracy=0.1,
                                           precision=1200)  # precision=1200s (20min) for daily calc
+        
+        # Clip sunshine grid to specified bounds to remove any extra points outside the lat-lon bounds
+        bounds_box = box(min_lon, min_lat, max_lon, max_lat)
+        sunshine = gpd.clip(sunshine, bounds_box)
+        if sunshine.empty:
+            print(f"Warning: Sunshine grid clipped to empty after bounds application for {roofSelection} shadows.")
+            sunshine = gpd.GeoDataFrame(
+                geometry=[], crs="EPSG:4326"
+            )
+            sunshine['sunshine'] = pd.Series(dtype=float)
+            sunshine['sunshine_minutes_in_hour'] = pd.Series(dtype=float)
 
     # Step 5: Define the specific hour
     specific_time_start = datetime.strptime(f"{date} {hour}:00", '%Y-%m-%d %H:%M')
@@ -134,7 +153,9 @@ def calculate_sunshine_minutes(file_path, lat1, lon1, lat2, lon2, date, hour, ro
 
     # Step 8: Visualize based on computed sunshine (full map if any sunshine, else buildings-only)
     has_sunshine = sunshine['sunshine_minutes_in_hour'].max() > 0
-    fig, ax = plt.subplots(figsize=(12, 12))
+    # Compute figsize based on bounds
+    figsize = compute_figsize(min_lon, max_lon, min_lat, max_lat)
+    fig, ax = plt.subplots(1, 1, figsize=figsize)
     if has_sunshine:
         sunshine.plot(
             ax=ax,
@@ -143,7 +164,7 @@ def calculate_sunshine_minutes(file_path, lat1, lon1, lat2, lon2, date, hour, ro
             alpha=1,
             norm=colors.Normalize(vmin=0, vmax=60),
             legend=True,
-            legend_kwds={'label': "Sunshine Minutes", 'orientation': "vertical", 'shrink': 0.5}
+            legend_kwds={'label': "Sunshine Minutes", 'orientation': "vertical", 'shrink': 1.0}
         )
         if not buildings_analysis.empty:
             buildings_analysis.plot(ax=ax, edgecolor='k', facecolor=(0, 0, 0, 0))
@@ -154,10 +175,11 @@ def calculate_sunshine_minutes(file_path, lat1, lon1, lat2, lon2, date, hour, ro
         ax.set_title(f'Building Shapes - Hour {hour}:00 (No Sunlight), {date}, {roofSelection}')
     
     plt.title(f'Sunshine Minutes in Hour ({hour}:00-{hour+1}:00, {date})' if has_sunshine else f'Building Shapes - Hour {hour}:00 (No Sunlight), {date}, {roofSelection}')
-    ax.set_xlim(sunshine.total_bounds[0] if has_sunshine else buildings_analysis.total_bounds[0], 
-                sunshine.total_bounds[2] if has_sunshine else buildings_analysis.total_bounds[2])
-    ax.set_ylim(sunshine.total_bounds[1] if has_sunshine else buildings_analysis.total_bounds[1], 
-                sunshine.total_bounds[3] if has_sunshine else buildings_analysis.total_bounds[3])
+    
+    # Set STRICT bounds (no buffer)
+    ax.set_xlim(min_lon, max_lon)
+    ax.set_ylim(min_lat, max_lat)
+    ax.set_aspect('equal')
 
     if show_plot:
         plt.show()
@@ -170,7 +192,7 @@ def calculate_sunshine_minutes(file_path, lat1, lon1, lat2, lon2, date, hour, ro
     
     return sunshine, fig, ax
 
-def plot_combined_sunshine_overlay(ground_sunshine, roof_sunshine, buildings_analysis, hour, date, timestamp, base_path):
+def plot_combined_sunshine_overlay(ground_sunshine, roof_sunshine, buildings_analysis, hour, date, timestamp, base_path, min_lat, min_lon, max_lat, max_lon):
     """
     Plot combined sunshine visualization for ground and roof shadows overlaid in a single map.
     Uses rasterization via griddata for smooth overlay with transparency.
@@ -184,6 +206,7 @@ def plot_combined_sunshine_overlay(ground_sunshine, roof_sunshine, buildings_ana
     - date: The date string.
     - timestamp: Timestamp for file naming.
     - base_path: Base path for saving the figure.
+    - min_lat, min_lon, max_lat, max_lon: Strict bounds for the map.
     
     Returns:
     - fig: Matplotlib figure.
@@ -201,9 +224,8 @@ def plot_combined_sunshine_overlay(ground_sunshine, roof_sunshine, buildings_ana
     # Explicitly set CRS after concatenation to avoid warnings
     combined_sunshine.crs = 'EPSG:4326'
     
-    # Use exact bounds from the combined data (no padding to avoid extra area)
-    bounds = combined_sunshine.total_bounds
-    minx, miny, maxx, maxy = bounds
+    # Use strict bounds for grid (no padding)
+    minx, miny, maxx, maxy = min_lon, min_lat, max_lon, max_lat
     
     # Higher grid resolution for smoother interpolation and fewer artifacts
     grid_res = 300  # Increased for finer detail
@@ -217,51 +239,17 @@ def plot_combined_sunshine_overlay(ground_sunshine, roof_sunshine, buildings_ana
     points_combined = np.column_stack([combined_centroids.x.values, combined_centroids.y.values])
     values_combined = combined_sunshine['sunshine_minutes_in_hour'].values
     
-    # Rasterize the combined data using griddata with 'cubic' method for smoother results
-    # (changed from 'linear' to reduce NaN issues in sparse areas)
-    grid_combined = griddata(points_combined, values_combined, (grid_x, grid_y), method='cubic', fill_value=0)
+    # Rasterize the combined data using griddata with 'nearest' method to avoid extrapolation to 0 at edges
+    grid_combined = griddata(points_combined, values_combined, (grid_x, grid_y), method='nearest')
     
-    # Fill any internal NaNs robustly with nearest-neighbor on NaN locations only
-    def fill_internal_nans(grid, points, values, grid_x, grid_y):
-        nan_mask = np.isnan(grid)
-        if np.any(nan_mask):
-            print(f"Warning: Found {np.sum(nan_mask)} NaNs in grid; filling with nearest.")
-            nan_indices = np.where(nan_mask)
-            # Get coordinates of NaN positions
-            nan_x = grid_x[nan_indices]
-            nan_y = grid_y[nan_indices]
-            nan_points = np.column_stack([nan_x, nan_y])
-            # Interpolate only at NaN points using nearest
-            nan_filled = griddata(points, values, nan_points, method='nearest')
-            # Assign back
-            grid[nan_indices] = nan_filled
-        return grid
-    
-    grid_combined = fill_internal_nans(grid_combined, points_combined, values_combined, grid_x, grid_y)
-    
-    # Clip to valid range [0, 60] (no more NaNs expected)
+    # Clip to valid range [0, 60]
     grid_combined = np.clip(grid_combined, 0, 60)
     
-    # Optional: Mask to convex hull to avoid extrapolation outside data points (reduces edge artifacts)
-    if len(points_combined) >= 4:  # At least 4 points for stable 2D hull
-        try:
-            hull_combined = ConvexHull(points_combined)
-            xx = grid_x.ravel()
-            yy = grid_y.ravel()
-            ineqs_combined = (
-                hull_combined.equations[:, 0][:, np.newaxis] * xx[np.newaxis, :] +
-                hull_combined.equations[:, 1][:, np.newaxis] * yy[np.newaxis, :] +
-                hull_combined.equations[:, 2][:, np.newaxis] <= 0
-            )
-            mask_combined = np.all(ineqs_combined, axis=0)  # (npoints,)
-            mask_2d_combined = mask_combined.reshape(grid_y.shape)  # Explicitly use grid_y.shape (ny, nx)
-            grid_combined[~mask_2d_combined] = 0
-            print("Combined hull masking applied successfully.")
-        except Exception as e:
-            print(f"Warning: ConvexHull for combined failed ({e}), skipping mask.")
+    # Compute figsize based on bounds
+    figsize = compute_figsize(min_lon, max_lon, min_lat, max_lat)
     
     # Create figure with white background explicitly
-    fig, ax = plt.subplots(figsize=(12, 12), facecolor='white')
+    fig, ax = plt.subplots(1, 1, figsize=figsize, facecolor='white')
     ax.set_facecolor('white')
     
     # Define shared norm with clipping
@@ -279,14 +267,10 @@ def plot_combined_sunshine_overlay(ground_sunshine, roof_sunshine, buildings_ana
         buildings_analysis.plot(ax=ax, facecolor='none', edgecolor='black', linewidth=0.5, alpha=0.8)
     
     # Add a single colorbar for the shared scale
-    cbar = plt.colorbar(im_combined, ax=ax, shrink=0.6)
-    cbar.set_label('Sunshine Minutes (0-60)', fontsize=12)
+    cbar = plt.colorbar(im_combined, ax=ax, shrink=1.0)
+    cbar.set_label('Sunshine Minutes (0-60)', fontsize=14)
     
-    # Set limits exactly to bounds for tight fit (no extra space)
-    # margin = 0.000005  # Tiny margin to avoid edge clipping issues
-    # ax.set_xlim(minx - margin, maxx + margin)
-    # ax.set_ylim(miny - margin, maxy + margin)
-
+    # Set STRICT limits (no margin, no extra space)
     ax.set_xlim(minx, maxx)
     ax.set_ylim(miny, maxy)
     ax.set_xlabel('Longitude')
