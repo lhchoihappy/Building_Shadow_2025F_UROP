@@ -9,6 +9,18 @@ import matplotlib.pyplot as plt
 import pybdshadow
 import numpy as np
 
+import os
+from datetime import datetime
+import geopandas as gpd
+from map_extraction import extract_map_subset, compute_figsize
+from sunshine_minute import calculate_sunshine_minutes, plot_combined_sunshine_overlay
+from solar_irradiance import calculate_hourly_solar_irradiance, generate_irradiance_map, get_direct_irradiance
+from sunrise_sunset import get_sunrise_sunset
+from temperature import plot_temperature_map
+import matplotlib.pyplot as plt
+import pybdshadow
+import numpy as np
+
 if __name__ == "__main__":
     # File path and parameters
     file_path = r'D:\@UST\UROP\2025 Fall\HKBuildings.geojson'
@@ -18,8 +30,25 @@ if __name__ == "__main__":
     # lat1, lon1 = 22.28367, 114.12569  # Kennedy point 1
     # lat2, lon2 = 22.27856, 114.13082  # Kennedy point 2
 
-    lat1, lon1 = 22.28300, 114.12678  # Point 1 (much more narrow)
-    lat2, lon2 = 22.28276, 114.12805  # Point 2 (much more narrow)
+    # Case 1: 
+    lat1, lon1 = 22.28300, 114.12678  # Point 1
+    lat2, lon2 = 22.28276, 114.12805  # Point 2
+
+    # Larger case 1:
+    # lat1, lon1 = 22.28306, 114.12672
+    # lat2, lon2 = 22.28276, 114.12805
+    
+    # Case 2:
+    # lat1, lon1 = 22.28354, 114.12583
+    # lat2, lon2 = 22.28260, 114.12818
+
+    # Case 3: 
+    # lat1, lon1 = 22.28372, 114.12659
+    # lat2, lon2 = 22.28328, 114.12801
+
+    # Case 4:
+    # lat1, lon1 = 22.28322, 114.12807
+    # lat2, lon2 = 22.28216, 114.12916
 
     # # A larger domain
     # lat1, lon1 = 22.2836270, 114.1259158
@@ -66,7 +95,7 @@ if __name__ == "__main__":
         base_path = os.path.splitext(geojson_path)[0]
         
         # Loop over 24 hours
-        hh = np.array([7,12,17])
+        hh = np.array([17,18, 8])
         for hour in hh:
 
         # for hour in range(24):
@@ -74,21 +103,17 @@ if __name__ == "__main__":
             
             # Compute sunshine for ground (roof=False)
             print("Running calculate_sunshine_minutes for ground...")
-            ground_sunshine, _, _ = calculate_sunshine_minutes(
+            ground_sunshine, roof_sunshine, figures_dict = calculate_sunshine_minutes(
                 geojson_path, lat1, lon1, lat2, lon2, date, hour, False, timestamp, show_plot=False, verbose=False
             )
             
-            # Compute sunshine for roof (roof=True)
-            print("Running calculate_sunshine_minutes for roof...")
-            roof_sunshine, _, _ = calculate_sunshine_minutes(
-                geojson_path, lat1, lon1, lat2, lon2, date, hour, True, timestamp, show_plot=False, verbose=False
-            )
+            # Note: All three visualizations (ground, roof, combined) are now generated and saved
+            # within calculate_sunshine_minutes function, so we don't need to call plot_combined_sunshine_overlay
             
-            # Generate combined overlay sunshine plot
-            print("Generating combined overlay sunshine map...")
-            combined_fig = plot_combined_sunshine_overlay(ground_sunshine, roof_sunshine, buildings_analysis, hour, date, timestamp, base_path, min_lat, min_lon, max_lat, max_lon)
-            if combined_fig:
-                plt.close(combined_fig)
+            # Close the figures to free memory
+            for fig_name, fig in figures_dict.items():
+                if fig is not None:
+                    plt.close(fig)
             
             # Save individual GeoJSONs for inspection (optional)
             ground_geojson_path = f"{base_path}_{timestamp}_sunshine_ground_hour_{hour:02d}.geojson"
@@ -97,9 +122,17 @@ if __name__ == "__main__":
             roof_sunshine.to_file(roof_geojson_path, driver='GeoJSON')
             print(f"Individual sunshine GeoJSONs saved for hour {hour:02d}")
             
+            # Generate temperature approximation map
+            temp_fig = plot_temperature_map(
+                ground_sunshine, roof_sunshine, buildings_analysis, hour, date, timestamp, base_path,
+                min_lat, min_lon, max_lat, max_lon, min_temp=26.5, max_temp=30.7
+            )
+            if temp_fig is not None:
+                plt.close(temp_fig)
+
             # Irradiance map for this hour
             print("Generating irradiance map...")
-            irr_fig, irr_ax = generate_irradiance_map(buildings, hourly_irradiance, hour, timestamp, geojson_path, min_lat, min_lon, max_lat, max_lon)
+            irr_fig, irr_ax = generate_irradiance_map(buildings, hourly_irradiance, hour, date, timestamp, geojson_path, min_lat, min_lon, max_lat, max_lon)
             # Save irradiance here too
             irr_path = f"{base_path}_{timestamp}_irradiance_hour_{hour:02d}.png"
             plt.figure(irr_fig.number)

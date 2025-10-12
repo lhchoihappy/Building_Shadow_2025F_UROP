@@ -29,7 +29,7 @@ def get_direct_irradiance(lat, lon, t):
     irradiance = radiation.get_radiation_direct(utc_t, altitude)
     return irradiance
 
-def generate_irradiance_map(buildings, hourly_irradiance, specified_hour, timestamp, file_path, min_lat, min_lon, max_lat, max_lon):
+def generate_irradiance_map(buildings, hourly_irradiance, specified_hour, date, timestamp, file_path, min_lat, min_lon, max_lat, max_lon):
     """
     Generate a single irradiance map for the specified hour with a uniform scale bar.
     
@@ -113,7 +113,7 @@ def generate_irradiance_map(buildings, hourly_irradiance, specified_hour, timest
     cbar = plt.colorbar(im, ax=ax, shrink=1.0, aspect=10)
     cbar.set_label('Solar Irradiance (W/m²)', fontsize=10)
     
-    ax.set_title(f'Solar Irradiance Map\n{datetime.now().strftime("%Y-%m-%d")} {specified_hour:02d}:00 - {specified_irradiance_data["irradiance"]:.1f} W/m²', 
+    ax.set_title(f'Solar Irradiance Map\n{date} {specified_hour:02d}:00 - {specified_irradiance_data["irradiance"]:.1f} W/m²', 
                  fontsize=12, pad=20)
     ax.set_xlabel('Longitude', fontsize=8)
     ax.set_ylabel('Latitude', fontsize=8)
