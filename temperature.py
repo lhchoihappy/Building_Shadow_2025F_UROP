@@ -8,7 +8,7 @@ import pandas as pd
 import os
 import geopandas as gpd
 
-def plot_temperature_map(ground_sunshine, roof_sunshine, buildings_analysis, hour, date, timestamp, base_path, min_lat, min_lon, max_lat, max_lon, min_temp=26.5, max_temp=30.7):
+def plot_temperature_map(ground_sunshine, roof_sunshine, buildings_analysis, hour, date, timestamp, base_path, min_lat, min_lon, max_lat, max_lon, min_temp, max_temp):
     """
     Plot temperature approximation map based on sunshine minutes for ground and roof overlaid in a single map.
     Uses linear mapping: 0 mins -> min_temp, 60 mins -> max_temp.

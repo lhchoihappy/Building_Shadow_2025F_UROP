@@ -55,9 +55,15 @@ if __name__ == "__main__":
     # lat2, lon2 = 22.2819833, 114.1282566
     
     date = '2025-08-20'
+
+    # Define the max_T and the min_T according to the nearest HKO temperature station (on the date specified)
+    # In this Kennedy Town example, the maximum temp. and the minimum temp. are from the HK Park station (the nearest temp station)
+    max_T = 30.7 # 2025-08-20
+    min_T = 26.5 # 2025-08-20
     
     # Generate timestamp at runtime
     timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+
     
     # Define strict bounds
     min_lon = min(lon1, lon2)
@@ -125,7 +131,7 @@ if __name__ == "__main__":
             # Generate temperature approximation map
             temp_fig = plot_temperature_map(
                 ground_sunshine, roof_sunshine, buildings_analysis, hour, date, timestamp, base_path,
-                min_lat, min_lon, max_lat, max_lon, min_temp=26.5, max_temp=30.7
+                min_lat, min_lon, max_lat, max_lon, min_T, max_T
             )
             if temp_fig is not None:
                 plt.close(temp_fig)
