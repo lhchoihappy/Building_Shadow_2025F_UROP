@@ -235,14 +235,14 @@ def calculate_sunshine_minutes(file_path, lat1, lon1, lat2, lon2, date, hour, ro
         roof_sunshine.loc[is_sunlit_roof, 'sunshine_minutes_in_hour'] += 1
 
     # Step 8: Visualize ground, roof, and combined
-    has_sunshine_ground = ground_sunshine['sunshine_minutes_in_hour'].max() > 0 if not ground_sunshine.empty else False
-    has_sunshine_roof = roof_sunshine['sunshine_minutes_in_hour'].max() > 0 if not roof_sunshine.empty else False
+    has_sunshine_ground = ground_sunshine['sunshine_minutes_in_hour'].max() > 0
+    has_sunshine_roof = roof_sunshine['sunshine_minutes_in_hour'].max() > 0
     has_sunshine = has_sunshine_ground or has_sunshine_roof
 
     # Compute figsize based on bounds
     figsize = compute_figsize(min_lon, max_lon, min_lat, max_lat)
 
-    # Ground visualization (original geopandas plot)
+    # Ground visualization
     fig_ground, ax_ground = plt.subplots(1, 1, figsize=figsize)
     if has_sunshine_ground:
         ground_sunshine.plot(
@@ -292,7 +292,7 @@ def calculate_sunshine_minutes(file_path, lat1, lon1, lat2, lon2, date, hour, ro
     plt.savefig(ground_path, dpi=300, bbox_inches='tight', facecolor='white')
     print(f"Ground sunshine map for hour {hour:02d} saved as: {ground_path}")
 
-    # Roof visualization (original geopandas plot)
+    # Roof visualization
     fig_roof, ax_roof = plt.subplots(1, 1, figsize=figsize)
     if has_sunshine_roof:
         roof_sunshine.plot(
@@ -341,9 +341,11 @@ def calculate_sunshine_minutes(file_path, lat1, lon1, lat2, lon2, date, hour, ro
     plt.savefig(roof_path, dpi=300, bbox_inches='tight', facecolor='white')
     print(f"Roof sunshine map for hour {hour:02d} saved as: {roof_path}")
 
-    # Combined visualization (direct geopandas plot on concatenated GDF)
-    combined_fig = None
-    if not ground_sunshine.empty and not roof_sunshine.empty:
+    # Combined visualization (adapted from plot_combined_sunshine_overlay)
+    if ground_sunshine.empty or roof_sunshine.empty:
+        print("One of the sunshine GeoDataFrames is empty. Skipping combined overlay.")
+        combined_fig = None
+    else:
         # Concatenate the two GeoDataFrames into a single one for unified visualization
         ground_sunshine['type'] = 'ground'
         roof_sunshine['type'] = 'roof'
@@ -351,51 +353,93 @@ def calculate_sunshine_minutes(file_path, lat1, lon1, lat2, lon2, date, hour, ro
         # Explicitly set CRS after concatenation to avoid warnings
         combined_sunshine.crs = 'EPSG:4326'
         
-        # Compute figsize based on bounds
-        figsize = compute_figsize(min_lon, max_lon, min_lat, max_lat)
+        # Use strict bounds for grid (no padding)
+        minx, miny, maxx, maxy = min_lon, min_lat, max_lon, max_lat
         
+        # Higher grid resolution for smoother interpolation and fewer artifacts
+        grid_res = 300  # Increased for finer detail
+        
+        x_coords = np.linspace(minx, maxx, grid_res)
+        y_coords = np.linspace(miny, maxy, grid_res)
+        grid_x, grid_y = np.meshgrid(x_coords, y_coords)
+        
+        # Prepare combined points using centroids
+        combined_centroids = combined_sunshine.geometry.centroid
+        points_combined = np.column_stack([combined_centroids.x.values, combined_centroids.y.values])
+        values_combined = combined_sunshine['sunshine_minutes_in_hour'].values
+        
+        # Rasterize the combined data using griddata with 'nearest' method to avoid extrapolation to 0 at edges
+        grid_combined = griddata(points_combined, values_combined, (grid_x, grid_y), method='nearest')
+        
+        # Clip to valid range [0, 60]
+        grid_combined = np.clip(grid_combined, 0, 60)
+
+        # ================= NAN Handling ====================
+        
+        # Method 1: NAN handling by using scipy.ndimage.distance_transform_edt
+        valid_mask = ~np.isnan(grid_combined) # convert this NumPy array into binary np.array (1: fine, 0: NAN)
+        if np.any(valid_mask):  # Only if there's at least one valid value
+            dist, idx = ndimage.distance_transform_edt(~valid_mask, return_indices=True)
+            filled = grid_combined.copy()
+            nan_mask = ~valid_mask # 1: NAN, 0: fine
+            filled[nan_mask] = grid_combined[idx[0][nan_mask], idx[1][nan_mask]] # selects all the NaN (hole) positions in the filled array using nan_mask and 
+                                                                          # replaces their values with data from the nearest valid positions in grid_combined, 
+                                                                          # by indexing into it using the pre-computed row (idx[0]) and column (idx[1]) coordinates 
+                                                                          # for those exact hole spots
+            grid_combined = filled
+        else:
+            # All NaN: fill with 0 (no sunshine)
+            grid_combined = np.zeros_like(grid_combined)
+
+        # ... (create figure with white background)
+        combined_fig, ax_combined = plt.subplots(1, 1, figsize=figsize, facecolor='white')
+        ax_combined.set_facecolor('white')
+
+        # Define shared norm with clipping
+        norm = colors.Normalize(vmin=0, vmax=60, clip=True)
+
+        # Plot the combined grid—NaNs will now show as white (background)
+        im_combined = ax_combined.pcolormesh(grid_x, grid_y, grid_combined,
+                                            cmap='plasma',
+                                            alpha=1.0,  # Full opacity where data exists
+                                            norm=norm,
+                                            shading='auto')  # 'auto' for dimension matching
+
+        # Overlay building outlines (increase linewidth for better shadow contrast)
+        if not buildings_analysis.empty:
+            buildings_analysis.plot(ax=ax_combined, facecolor='none', edgecolor='black', linewidth=1.0, alpha=0.9)  # Thicker lines for visibility
+
         # Create figure with white background explicitly
         combined_fig, ax_combined = plt.subplots(1, 1, figsize=figsize, facecolor='white')
         ax_combined.set_facecolor('white')
         
-        # Direct plot on combined GDF to preserve exact point coverage and white gaps
-        has_sunshine_combined = combined_sunshine['sunshine_minutes_in_hour'].max() > 0
-        if has_sunshine_combined:
-            combined_sunshine.plot(
-                ax=ax_combined,
-                column='sunshine_minutes_in_hour',
-                cmap='plasma',
-                alpha=1,
-                norm=colors.Normalize(vmin=0, vmax=60),
-                legend=True,
-                legend_kwds={'label': "Sunshine Minutes (Combined)", 'orientation': "vertical", 'shrink': 0.8, 'pad': 0.02}
-            )
-            if not buildings_analysis.empty:
-                buildings_analysis.plot(ax=ax_combined, edgecolor='k', facecolor=(0, 0, 0, 0))
-        else:
-            # No sunshine: just buildings
-            if not buildings_analysis.empty:
-                buildings_analysis.plot(ax=ax_combined, facecolor='none', edgecolor='black', linewidth=0.5)
-            ax_combined.set_title(f'Building Shapes - Hour {hour}:00 (No Sunlight, Combined), {date}')
+        # Define shared norm with clipping
+        norm = colors.Normalize(vmin=0, vmax=60, clip=True)
         
-        title_str_combined = f'Combined Ground & Rooftop Sunshine in Hour ({hour}:00-{hour+1}:00, {date})' if has_sunshine_combined else f'Building Shapes - Hour {hour}:00 (No Sunlight, Combined), {date}'
-        ax_combined.set_title(title_str_combined, fontsize=12)
+        # Plot the combined grid as a single layer with full opacity (since concatenated, it blends naturally via overlapping points)
+        im_combined = ax_combined.pcolormesh(grid_x, grid_y, grid_combined,
+                                            cmap='plasma',
+                                            alpha=1.0,
+                                            norm=norm,  # Use explicit norm with clip
+                                            shading='auto')  # Changed to 'auto' to match dimensions
+        
+        # Overlay building outlines
+        if not buildings_analysis.empty:
+            buildings_analysis.plot(ax=ax_combined, facecolor='none', edgecolor='black', linewidth=0.5, alpha=0.8)
+        
+        # Add a single colorbar for the shared scale, adjusted for size
+        cbar = plt.colorbar(im_combined, ax=ax_combined, shrink=0.8, pad=0.02, aspect=10)
+        cbar.set_label('Sunshine Minutes (Combined)', fontsize=10)
+        cbar.ax.tick_params(labelsize=9)
         
         # Set STRICT limits (no margin, no extra space)
-        ax_combined.set_xlim(min_lon, max_lon)
-        ax_combined.set_ylim(min_lat, max_lat)
+        ax_combined.set_xlim(minx, maxx)
+        ax_combined.set_ylim(miny, maxy)
+        ax_combined.set_xlabel('Longitude', fontsize=10)
+        ax_combined.set_ylabel('Latitude', fontsize=10)
         ax_combined.set_aspect('equal')
-        ax_combined.set_xlabel('Longitude', fontsize=8)
-        ax_combined.set_ylabel('Latitude', fontsize=8)
         ax_combined.tick_params(axis='both', labelsize=9)
-        
-        # Adjust colorbar if present
-        if has_sunshine_combined:
-            cbar_combined = ax_combined.get_legend()  # For geopandas plot legend
-            if cbar_combined:
-                cbar_combined.set_label('Sunshine Minutes (Combined)', fontsize=10)
-                for t in cbar_combined.get_ticks():
-                    t.label.set_fontsize(10)
+        ax_combined.set_title(f'Combined Ground & Rooftop Sunshine\nHour {hour:02d}:00-{hour+1:02d}:00, {date}', fontsize=12)
         
         plt.tight_layout()
 
@@ -457,19 +501,51 @@ def plot_combined_sunshine_overlay(ground_sunshine, roof_sunshine, buildings_ana
         print("One of the sunshine GeoDataFrames is empty. Skipping overlay.")
         return None
     
-    # Concatenate the two GeoDataFrames into a single one for unified visualization
+    # NEW: Concatenate the two GeoDataFrames into a single one for unified visualization
+    # Add a 'type' column to distinguish, but for visualization, we'll use the combined points
+    # for a single interpolation layer. This avoids separate raster issues and NaN mismatches.
     ground_sunshine['type'] = 'ground'
     roof_sunshine['type'] = 'roof'
     combined_sunshine = pd.concat([ground_sunshine, roof_sunshine], ignore_index=True)
     # Explicitly set CRS after concatenation to avoid warnings
     combined_sunshine.crs = 'EPSG:4326'
     
-    # Define strict bounds
-    min_lon = min_lon
-    max_lon = max_lon
-    min_lat = min_lat
-    max_lat = max_lat
+    # Use strict bounds for grid (no padding)
+    minx, miny, maxx, maxy = min_lon, min_lat, max_lon, max_lat
     
+    # Higher grid resolution for smoother interpolation and fewer artifacts
+    grid_res = 300  # Increased for finer detail
+    
+    x_coords = np.linspace(minx, maxx, grid_res)
+    y_coords = np.linspace(miny, maxy, grid_res)
+    grid_x, grid_y = np.meshgrid(x_coords, y_coords)
+    
+    # Prepare combined points using centroids
+    combined_centroids = combined_sunshine.geometry.centroid
+    points_combined = np.column_stack([combined_centroids.x.values, combined_centroids.y.values])
+    values_combined = combined_sunshine['sunshine_minutes_in_hour'].values
+    
+    # Rasterize the combined data using griddata with 'nearest' method to avoid extrapolation to 0 at edges
+    grid_combined = griddata(points_combined, values_combined, (grid_x, grid_y), method='nearest')
+    
+    # Clip to valid range [0, 60]
+    grid_combined = np.clip(grid_combined, 0, 60)
+    
+    # NAN handling by using scipy.ndimage.distance_transform_edt
+    valid_mask = ~np.isnan(grid_combined) # convert this NumPy array into binary np.array (1: fine, 0: NAN)
+    if np.any(valid_mask):  # Only if there's at least one valid value
+        dist, idx = ndimage.distance_transform_edt(~valid_mask, return_indices=True)
+        filled = grid_combined.copy()
+        nan_mask = ~valid_mask # 1: NAN, 0: fine
+        filled[nan_mask] = grid_combined[idx[0][nan_mask], idx[1][nan_mask]] # selects all the NaN (hole) positions in the filled array using nan_mask and 
+                                                                             # replaces their values with data from the nearest valid positions in grid_combined, 
+                                                                             # by indexing into it using the pre-computed row (idx[0]) and column (idx[1]) coordinates 
+                                                                             # for those exact hole spots
+        grid_combined = filled
+    else:
+        # All NaN: fill with 0 (no sunshine)
+        grid_combined = np.zeros_like(grid_combined)
+
     # Compute figsize based on bounds
     figsize = compute_figsize(min_lon, max_lon, min_lat, max_lat)
     
@@ -477,44 +553,33 @@ def plot_combined_sunshine_overlay(ground_sunshine, roof_sunshine, buildings_ana
     fig, ax = plt.subplots(1, 1, figsize=figsize, facecolor='white')
     ax.set_facecolor('white')
     
-    # Direct plot on combined GDF to preserve exact point coverage and white gaps
-    has_sunshine_combined = combined_sunshine['sunshine_minutes_in_hour'].max() > 0
-    if has_sunshine_combined:
-        combined_sunshine.plot(
-            ax=ax,
-            column='sunshine_minutes_in_hour',
-            cmap='plasma',
-            alpha=1,
-            norm=colors.Normalize(vmin=0, vmax=60),
-            legend=True,
-            legend_kwds={'label': "Sunshine Minutes (0-60)", 'orientation': "vertical", 'shrink': 0.8, 'pad': 0.02}
-        )
-        if not buildings_analysis.empty:
-            buildings_analysis.plot(ax=ax, edgecolor='k', facecolor=(0, 0, 0, 0))
-    else:
-        # No sunshine: just buildings
-        if not buildings_analysis.empty:
-            buildings_analysis.plot(ax=ax, facecolor='none', edgecolor='black', linewidth=0.5)
-        ax.set_title(f'Building Shapes - Hour {hour}:00 (No Sunlight, Combined), {date}')
+    # Define shared norm with clipping
+    norm = colors.Normalize(vmin=0, vmax=60, clip=True)
     
-    title_str = f'Combined Ground & Rooftop Sunshine\nHour {hour:02d}:00-{hour+1:02d}:00, {date}' if has_sunshine_combined else f'Building Shapes - Hour {hour}:00 (No Sunlight, Combined), {date}'
-    ax.set_title(title_str, fontsize=12)
+    # Plot the combined grid as a single layer with full opacity (since concatenated, it blends naturally via overlapping points)
+    im_combined = ax.pcolormesh(grid_x, grid_y, grid_combined,
+                                cmap='plasma',
+                                alpha=1.0,
+                                norm=norm,  # Use explicit norm with clip
+                                shading='auto')  # Changed to 'auto' to match dimensions
+    
+    # Overlay building outlines
+    if not buildings_analysis.empty:
+        buildings_analysis.plot(ax=ax, facecolor='none', edgecolor='black', linewidth=0.5, alpha=0.8)
+    
+    # Add a single colorbar for the shared scale, adjusted for size
+    cbar = plt.colorbar(im_combined, ax=ax, shrink=0.8, pad=0.02, aspect=10)
+    cbar.set_label('Sunshine Minutes (0-60)', fontsize=10)
+    cbar.ax.tick_params(labelsize=9)
     
     # Set STRICT limits (no margin, no extra space)
-    ax.set_xlim(min_lon, max_lon)
-    ax.set_ylim(min_lat, max_lat)
-    ax.set_aspect('equal')
+    ax.set_xlim(minx, maxx)
+    ax.set_ylim(miny, maxy)
     ax.set_xlabel('Longitude', fontsize=10)
     ax.set_ylabel('Latitude', fontsize=10)
+    ax.set_aspect('equal')
     ax.tick_params(axis='both', labelsize=9)
-    
-    # Adjust colorbar if present
-    if has_sunshine_combined:
-        cbar = ax.get_legend()  # For geopandas plot legend
-        if cbar:
-            cbar.set_label('Sunshine Minutes (0-60)', fontsize=10)
-            for t in cbar.get_ticks():
-                t.label.set_fontsize(10)
+    ax.set_title(f'Combined Ground & Rooftop Sunshine\nHour {hour:02d}:00-{hour+1:02d}:00, {date}', fontsize=12)
     
     plt.tight_layout()
     

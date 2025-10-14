@@ -6,6 +6,7 @@
 - Perform various GIS works, like handling building shadows of different building morphologies, solar irradiance, and the extraction of the HK map -->
 
 ## How to use this repository
+
 ### Changing the file directory
 In `main.py`, there are 2 major file input that you need to change when you use this program: 
 1. In line 16, there is a `hk_building_path`. 
@@ -13,12 +14,14 @@ In `main.py`, there are 2 major file input that you need to change when you use 
 2. In line 17, there is a `building_height_path` that is used to store the height data of the building 
    - In case the extracted Geojson file has very little building height value, like this Kennedy Town domain example, this program can automatically insert the height data into the extracted Geojson file for the further processing
    - These height value are manually added from the Open3Dhk
-## Global Variables 
+
+### Global Variables 
 In `main.py`, there are quite a lot of global variables that you can feel free to change:
 1. `lat1, lon1`, `lat2, lon2`: they are the boundary of the extracted map. You can change them for a different domain visualization
 2. `date`: the date that you want to do the visualization (I have done a test on using differnt date, and it can successfully show different output than the current 2025-08-20 date)
 3. `max_T, min_T`: the maximum temperature and the minimum temperature on the date specified based on the nearest HKO temperature station
 4. `suntime`: the hour that you want to do the visualization
+   
 ## Functions
 
-### My weekly Progress: 
+## My weekly Progress: 
