@@ -57,7 +57,7 @@ def plot_temperature_map(ground_sunshine, roof_sunshine, buildings_analysis, hou
         combined_sunshine.plot(
             ax=ax,
             column='estimated_temp',
-            cmap='coolwarm',  # Blue (cool) to red (warm) colormap
+            cmap='Wistia',  # Changed to 'turbo' for a vibrant blue-to-red spectrum through green/yellow, no white in middle
             alpha=1.0,
             norm=colors.Normalize(vmin=min_temp, vmax=max_temp, clip=True),
             legend=False  # Disable automatic legend
@@ -66,7 +66,7 @@ def plot_temperature_map(ground_sunshine, roof_sunshine, buildings_analysis, hou
             buildings_analysis.plot(ax=ax, edgecolor='k', facecolor=(0, 0, 0, 0))
         
         # Manually add colorbar with custom ticks at min and max
-        sm = plt.cm.ScalarMappable(cmap='coolwarm', norm=colors.Normalize(vmin=min_temp, vmax=max_temp, clip=True))
+        sm = plt.cm.ScalarMappable(cmap='Wistia', norm=colors.Normalize(vmin=min_temp, vmax=max_temp, clip=True))
         sm.set_array([])
         cbar = fig.colorbar(sm, ax=ax, shrink=0.8, pad=0.02, aspect=10)
         cbar.set_label('Estimated Temperature (°C)', fontsize=10)

@@ -5,27 +5,16 @@ from map_extraction import extract_map_subset, compute_figsize
 from sunshine_minute import calculate_sunshine_minutes, plot_combined_sunshine_overlay
 from solar_irradiance import calculate_hourly_solar_irradiance, generate_irradiance_map, get_direct_irradiance
 from sunrise_sunset import get_sunrise_sunset
-import matplotlib.pyplot as plt
-import pybdshadow
-import numpy as np
-
-import os
-from datetime import datetime
-import geopandas as gpd
-from map_extraction import extract_map_subset, compute_figsize
-from sunshine_minute import calculate_sunshine_minutes, plot_combined_sunshine_overlay
-from solar_irradiance import calculate_hourly_solar_irradiance, generate_irradiance_map, get_direct_irradiance
-from sunrise_sunset import get_sunrise_sunset
 from temperature import plot_temperature_map
 import matplotlib.pyplot as plt
 import pybdshadow
 import numpy as np
+from shapely import make_valid
 
 if __name__ == "__main__":
-    # File path and parameters
-    file_path = r'D:\@UST\UROP\2025 Fall\HKBuildings.geojson'
-    # csv_path = r'D:\@UST\UROP\2025 Fall\Height_dataset_KTown.csv'  # Adjust to the actual CSV path
-    csv_path = r"D:\@UST\UROP\2025 Fall\ktown_heights_summary_v2.csv" # New Height Database
+    # =================================== File path and parameters ===================================
+    hk_building_path = r'D:\@UST\UROP\2025 Fall\HKBuildings.geojson'
+    building_height_path = r"D:\@UST\UROP\2025 Fall\ktown_heights_summary_v2.csv" # New Height Database
     
     # lat1, lon1 = 22.28367, 114.12569  # Kennedy point 1
     # lat2, lon2 = 22.27856, 114.13082  # Kennedy point 2
@@ -72,12 +61,12 @@ if __name__ == "__main__":
     max_lat = max(lat1, lat2)
     
     # Check if file exists
-    if not os.path.exists(file_path):
-        print(f"Error: File {file_path} does not exist. Please ensure the GeoJSON file is in the specified directory.")
+    if not os.path.exists(hk_building_path):
+        print(f"Error: File {hk_building_path} does not exist. Please ensure the GeoJSON file is in the specified directory.")
     else:
         # Run extract_map_subset once
         print("Running extract_map_subset...")
-        subset_gdf, geojson_path = extract_map_subset(file_path, lat1, lon1, lat2, lon2, timestamp, csv_path)
+        subset_gdf, geojson_path = extract_map_subset(hk_building_path, lat1, lon1, lat2, lon2, timestamp, building_height_path)
         
         # Compute centroid
         if not subset_gdf.empty:
@@ -100,11 +89,13 @@ if __name__ == "__main__":
         
         base_path = os.path.splitext(geojson_path)[0]
         
-        # Loop over 24 hours
-        hh = np.array([17,18, 8])
-        for hour in hh:
+        # ========================== Hour Specified Here ==========================
+        suntime = np.array([5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20])
+        for hour in suntime:
 
+        # Loop over 24 hours
         # for hour in range(24):
+
             print(f"\n--- Processing Hour {hour:02d}:00 - {hour+1:02d}:00 ---")
             
             # Compute sunshine for ground (roof=False)
@@ -124,8 +115,21 @@ if __name__ == "__main__":
             # Save individual GeoJSONs for inspection (optional)
             ground_geojson_path = f"{base_path}_{timestamp}_sunshine_ground_hour_{hour:02d}.geojson"
             roof_geojson_path = f"{base_path}_{timestamp}_sunshine_roof_hour_{hour:02d}.geojson"
-            ground_sunshine.to_file(ground_geojson_path, driver='GeoJSON')
-            roof_sunshine.to_file(roof_geojson_path, driver='GeoJSON')
+
+            # Fix geometries before saving
+            ground_sunshine_fixed = ground_sunshine.copy()
+            roof_sunshine_fixed = roof_sunshine.copy()
+
+            ground_sunshine_fixed.geometry = ground_sunshine_fixed.geometry.apply(
+                lambda geom: make_valid(geom) if geom is not None else geom
+            )
+            roof_sunshine_fixed.geometry = roof_sunshine_fixed.geometry.apply(
+                lambda geom: make_valid(geom) if geom is not None else geom
+            )
+
+            # Now save the fixed versions
+            ground_sunshine_fixed.to_file(ground_geojson_path, driver='GeoJSON')
+            roof_sunshine_fixed.to_file(roof_geojson_path, driver='GeoJSON')
             print(f"Individual sunshine GeoJSONs saved for hour {hour:02d}")
             
             # Generate temperature approximation map
