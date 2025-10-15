@@ -22,6 +22,8 @@ In `main.py`, there are quite a lot of global variables that you can feel free t
 3. `max_T, min_T`: the maximum temperature and the minimum temperature on the date specified based on the nearest HKO temperature station
 4. `suntime`: the hour that you want to do the visualization
    
+## Test Cases
+I have selected several test cases within the Kennedy Town region with different building shapes and height for the test case testing. You can feel free to try each of these test cases. 
 ## Functions
 
 ## My weekly Progress: 
